@@ -1560,24 +1560,24 @@ export default function App(){
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_LIBRARY, JSON.stringify(libraryDocs)); },[libraryDocs, hydrated]);
 
   useEffect(() => {
-  async function testMe() {
+  async function testQuotes() {
     try {
-      const res = await fetch("/api/me");
+      const res = await fetch("/api/quotes");
 
       if (!res.ok) {
         const text = await res.text();
-        console.error("API HTTP ERROR:", res.status, text);
+        console.error("API ERROR:", res.status, text);
         return;
       }
 
       const data = await res.json();
-      console.log("ME:", data);
+      console.log("QUOTES:", data);
     } catch (err) {
-      console.error("API ERROR:", err);
+      console.error("FETCH ERROR:", err);
     }
   }
 
-  testMe();
+  testQuotes();
 }, []);
   
   const activeQuote = useMemo(()=>quotes.find(q=>q.quote_id===activeId)||null,[quotes,activeId]);
