@@ -1662,13 +1662,7 @@ export default function App(){
     </div>
   );
 }
-async function testMe() {
-  const res = await fetch("/api/me");
-  const data = await res.json();
-  console.log("ME:", data);
-}
 
-testMe();
 function Header({ tab,setTab,activeQuote,sync,onSync,role,setRole }){
   return (
     <div className="spread" style={{marginBottom:12}}>
