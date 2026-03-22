@@ -1563,6 +1563,13 @@ export default function App(){
   async function testMe() {
     try {
       const res = await fetch("/api/me");
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("API HTTP ERROR:", res.status, text);
+        return;
+      }
+
       const data = await res.json();
       console.log("ME:", data);
     } catch (err) {
