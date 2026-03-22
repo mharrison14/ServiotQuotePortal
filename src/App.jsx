@@ -1559,6 +1559,20 @@ export default function App(){
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_NOTES, JSON.stringify(notes)); },[notes, hydrated]);
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_LIBRARY, JSON.stringify(libraryDocs)); },[libraryDocs, hydrated]);
 
+  useEffect(() => {
+  async function testMe() {
+    try {
+      const res = await fetch("/api/me");
+      const data = await res.json();
+      console.log("ME:", data);
+    } catch (err) {
+      console.error("API ERROR:", err);
+    }
+  }
+
+  testMe();
+}, []);
+  
   const activeQuote = useMemo(()=>quotes.find(q=>q.quote_id===activeId)||null,[quotes,activeId]);
   const priceHistoryMap = useMemo(()=>buildPriceHistory(quotes),[quotes]);
 
