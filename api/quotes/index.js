@@ -1,4 +1,3 @@
-const sql = require("mssql");
 const { app } = require("@azure/functions");
 
 app.http("quotes", {
@@ -16,6 +15,7 @@ app.http("quotes", {
     }
 
     try {
+      const sql = require("mssql");
       const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
 
       const result = await pool.request().query(`
