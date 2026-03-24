@@ -1,7 +1,7 @@
 const { app } = require("@azure/functions");
 
 app.http("quoteById", {
-  methods: ["GET"],
+  methods: ["GET", "PUT"],
   authLevel: "anonymous",
   route: "quotes/{id:int}",
   handler: async (request, context) => {
@@ -136,30 +136,118 @@ app.http("quoteById", {
         };
       }
 
-      const quote = quoteResult.recordset[0];
+      const existingQuote = quoteResult.recordset[0];
 
-      const itemsResult = await pool.request()
-        .input("QuoteId", sql.Int, quoteId)
-        .query(`
-          SELECT
-            QuoteItemId,
-            QuoteId,
-            PartNumber,
-            Description,
-            Qty,
-            UnitPrice,
-            SortOrder
-          FROM QuoteItems
-          WHERE QuoteId = @QuoteId
-          ORDER BY SortOrder, QuoteItemId
-        `);
+      if (request.method === "GET") {
+        const itemsResult = await pool.request()
+          .input("QuoteId", sql.Int, quoteId)
+          .query(`
+            SELECT
+              QuoteItemId,
+              QuoteId,
+              PartNumber,
+              Description,
+              Qty,
+              UnitPrice,
+              SortOrder
+            FROM QuoteItems
+            WHERE QuoteId = @QuoteId
+            ORDER BY SortOrder, QuoteItemId
+          `);
+
+        return {
+          status: 200,
+          jsonBody: {
+            quote: existingQuote,
+            items: itemsResult.recordset
+          }
+        };
+      }
+
+      if (request.method === "PUT") {
+        const body = await request.json();
+        const statusId = body?.statusId;
+
+        if (!statusId || Number.isNaN(Number(statusId))) {
+          return {
+            status: 400,
+            jsonBody: { error: "statusId is required and must be numeric" }
+          };
+        }
+
+        const statusCheck = await pool.request()
+          .input("StatusId", sql.Int, Number(statusId))
+          .query(`
+            SELECT TOP 1 StatusId, StatusName
+            FROM QuoteStatuses
+            WHERE StatusId = @StatusId
+              AND IsActive = 1
+          `);
+
+        if (statusCheck.recordset.length === 0) {
+          return {
+            status: 400,
+            jsonBody: { error: "Invalid statusId" }
+          };
+        }
+
+        const updateResult = await pool.request()
+          .input("QuoteId", sql.Int, quoteId)
+          .input("StatusId", sql.Int, Number(statusId))
+          .query(`
+            UPDATE Quotes
+            SET
+              StatusId = @StatusId,
+              ModifiedUtc = SYSUTCDATETIME()
+            OUTPUT
+              INSERTED.QuoteId,
+              INSERTED.QuoteNumber,
+              INSERTED.CustomerAccountId,
+              INSERTED.CreatedByUserId,
+              INSERTED.AssignedToUserId,
+              INSERTED.StatusId,
+              INSERTED.CreatedUtc,
+              INSERTED.ModifiedUtc
+            WHERE QuoteId = @QuoteId
+          `);
+
+        const updatedQuote = updateResult.recordset[0];
+
+        await pool.request()
+          .input("EntityType", sql.NVarChar(100), "Quote")
+          .input("EntityId", sql.Int, updatedQuote.QuoteId)
+          .input("ActionType", sql.NVarChar(100), "Update")
+          .input("OldValueJson", sql.NVarChar(sql.MAX), JSON.stringify(existingQuote))
+          .input("NewValueJson", sql.NVarChar(sql.MAX), JSON.stringify(updatedQuote))
+          .input("PerformedByUserId", sql.Int, user.UserId)
+          .query(`
+            INSERT INTO AuditEvents (
+              EntityType,
+              EntityId,
+              ActionType,
+              OldValueJson,
+              NewValueJson,
+              PerformedByUserId
+            )
+            VALUES (
+              @EntityType,
+              @EntityId,
+              @ActionType,
+              @OldValueJson,
+              @NewValueJson,
+              @PerformedByUserId
+            )
+          `);
+
+        return {
+          status: 200,
+          jsonBody: updatedQuote
+        };
+      }
 
       return {
-        status: 200,
-        jsonBody: {
-          quote,
-          items: itemsResult.recordset
-        }
+        status: 405,
+        jsonBody: { error: "Method not allowed" }
       };
     } catch (err) {
       context.log("QUOTE BY ID API ERROR", err);
