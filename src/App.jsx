@@ -1559,52 +1559,26 @@ export default function App(){
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_NOTES, JSON.stringify(notes)); },[notes, hydrated]);
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_LIBRARY, JSON.stringify(libraryDocs)); },[libraryDocs, hydrated]);
 
-const { app } = require("@azure/functions");
-
-app.http("quotes", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  route: "quotes",
-  handler: async (request, context) => {
-    const principalHeader = request.headers.get("x-ms-client-principal");
-
-    if (!principalHeader) {
-      return {
-        status: 401,
-        jsonBody: { error: "Not authenticated" }
-      };
-    }
-
+useEffect(() => {
+  async function testQuotes() {
     try {
-      const sql = require("mssql");
-      const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
+      const res = await fetch("/api/quotes");
 
-      const result = await pool.request().query(`
-        SELECT TOP 10
-          q.QuoteId,
-          q.QuoteNumber,
-          qs.StatusName
-        FROM Quotes q
-        JOIN QuoteStatuses qs ON qs.StatusId = q.StatusId
-        ORDER BY q.CreatedUtc DESC
-      `);
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("API ERROR:", res.status, text);
+        return;
+      }
 
-      return {
-        status: 200,
-        jsonBody: result.recordset
-      };
+      const data = await res.json();
+      console.log("QUOTES:", data);
     } catch (err) {
-      context.log("SQL ERROR", err);
-      return {
-        status: 500,
-        jsonBody: {
-          error: "Database query failed",
-          detail: err.message
-        }
-      };
+      console.error("FETCH ERROR:", err);
     }
   }
-});
+
+  testQuotes();
+}, []);
   
   const activeQuote = useMemo(()=>quotes.find(q=>q.quote_id===activeId)||null,[quotes,activeId]);
   const priceHistoryMap = useMemo(()=>buildPriceHistory(quotes),[quotes]);
