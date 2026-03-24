@@ -2,7 +2,7 @@
   "name": "serviot-api",
   "version": "1.0.0",
   "description": "Serviot quoting portal backend",
-  "main": "me/index.js",
+  "main": "index.js",
   "scripts": {
     "start": "func start",
     "test": "echo \"No tests yet\""
