@@ -1559,61 +1559,52 @@ export default function App(){
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_NOTES, JSON.stringify(notes)); },[notes, hydrated]);
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_LIBRARY, JSON.stringify(libraryDocs)); },[libraryDocs, hydrated]);
 
- import { useEffect, useState } from "react";
+const { app } = require("@azure/functions");
 
-function App() {
-  const [quotes, setQuotes] = useState([]);
+app.http("quotes", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "quotes",
+  handler: async (request, context) => {
+    const principalHeader = request.headers.get("x-ms-client-principal");
 
-  useEffect(() => {
-    async function fetchQuotes() {
-      try {
-        const res = await fetch("/api/quotes");
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("API ERROR:", res.status, text);
-          return;
-        }
-
-        const data = await res.json();
-        setQuotes(data);
-      } catch (err) {
-        console.error("FETCH ERROR:", err);
-      }
+    if (!principalHeader) {
+      return {
+        status: 401,
+        jsonBody: { error: "Not authenticated" }
+      };
     }
 
-    fetchQuotes();
-  }, []);
+    try {
+      const sql = require("mssql");
+      const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
 
-  return (
-    <div style={{ padding: "20px" }}>
-      <h1>Quotes</h1>
+      const result = await pool.request().query(`
+        SELECT TOP 10
+          q.QuoteId,
+          q.QuoteNumber,
+          qs.StatusName
+        FROM Quotes q
+        JOIN QuoteStatuses qs ON qs.StatusId = q.StatusId
+        ORDER BY q.CreatedUtc DESC
+      `);
 
-      {quotes.length === 0 ? (
-        <p>No quotes found</p>
-      ) : (
-        <table border="1" cellPadding="10">
-          <thead>
-            <tr>
-              <th>Quote #</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quotes.map((q) => (
-              <tr key={q.QuoteId}>
-                <td>{q.QuoteNumber}</td>
-                <td>{q.StatusName}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-export default App;
+      return {
+        status: 200,
+        jsonBody: result.recordset
+      };
+    } catch (err) {
+      context.log("SQL ERROR", err);
+      return {
+        status: 500,
+        jsonBody: {
+          error: "Database query failed",
+          detail: err.message
+        }
+      };
+    }
+  }
+});
   
   const activeQuote = useMemo(()=>quotes.find(q=>q.quote_id===activeId)||null,[quotes,activeId]);
   const priceHistoryMap = useMemo(()=>buildPriceHistory(quotes),[quotes]);
