@@ -1560,24 +1560,24 @@ export default function App(){
   useEffect(()=>{ if(hydrated) localStorage.setItem(LS_LIBRARY, JSON.stringify(libraryDocs)); },[libraryDocs, hydrated]);
 
 useEffect(() => {
-  async function testQuotes() {
+  async function createQuote() {
     try {
-      const res = await fetch("/api/quotes");
-
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("API ERROR:", res.status, text);
-        return;
-      }
+      const res = await fetch("/api/quotes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({})
+      });
 
       const data = await res.json();
-      console.log("QUOTES:", data);
+      console.log("CREATE QUOTE:", data);
     } catch (err) {
-      console.error("FETCH ERROR:", err);
+      console.error("CREATE QUOTE ERROR:", err);
     }
   }
 
-  testQuotes();
+  createQuote();
 }, []);
   
   const activeQuote = useMemo(()=>quotes.find(q=>q.quote_id===activeId)||null,[quotes,activeId]);
