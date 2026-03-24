@@ -133,9 +133,37 @@ app.http("quotes", {
             );
           `);
 
+        const createdQuote = insertResult.recordset[0];
+
+        await pool.request()
+          .input("EntityType", sql.NVarChar(100), "Quote")
+          .input("EntityId", sql.Int, createdQuote.QuoteId)
+          .input("ActionType", sql.NVarChar(100), "Create")
+          .input("OldValueJson", sql.NVarChar(sql.MAX), null)
+          .input("NewValueJson", sql.NVarChar(sql.MAX), JSON.stringify(createdQuote))
+          .input("PerformedByUserId", sql.Int, user.UserId)
+          .query(`
+            INSERT INTO AuditEvents (
+              EntityType,
+              EntityId,
+              ActionType,
+              OldValueJson,
+              NewValueJson,
+              PerformedByUserId
+            )
+            VALUES (
+              @EntityType,
+              @EntityId,
+              @ActionType,
+              @OldValueJson,
+              @NewValueJson,
+              @PerformedByUserId
+            )
+          `);
+
         return {
           status: 201,
-          jsonBody: insertResult.recordset[0]
+          jsonBody: createdQuote
         };
       }
 
