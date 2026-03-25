@@ -6,3 +6,4 @@ require("./rules/index");
 require("./ruleById/index");
 require("./notes/index");
 require("./noteById/index");
+require("./files/index");
