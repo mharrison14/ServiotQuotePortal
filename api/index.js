@@ -5,3 +5,4 @@ require("./quoteVersion/index");
 require("./rules/index");
 require("./ruleById/index");
 require("./notes/index");
+require("./noteById/index");
