@@ -3,7 +3,7 @@ const { app } = require("@azure/functions");
 app.http("adminUsers", {
   methods: ["GET"],
   authLevel: "anonymous",
-  route: "admin/users",
+  route: "admin-users",
   handler: async (request, context) => {
     const principalHeader = request.headers.get("x-ms-client-principal");
 
