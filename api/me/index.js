@@ -1,44 +1,10 @@
 const { app } = require("@azure/functions");
 const sql = require("mssql");
 
-// =====================
-// /api/me
-// =====================
 app.http("me", {
   methods: ["GET"],
   authLevel: "anonymous",
   route: "me",
-  handler: async (request, context) => {
-    const principalHeader = request.headers.get("x-ms-client-principal");
-
-    if (!principalHeader) {
-      return {
-        status: 401,
-        jsonBody: { error: "Not authenticated" }
-      };
-    }
-
-    const decoded = Buffer.from(principalHeader, "base64").toString("utf8");
-    const principal = JSON.parse(decoded);
-
-    return {
-      status: 200,
-      jsonBody: {
-        userId: principal.userId,
-        userDetails: principal.userDetails,
-        userRoles: principal.userRoles
-      }
-    };
-  }
-});
-
-// =====================
-// /api/admin-users
-// =====================
-app.http("adminUsersInline", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  route: "admin-users",
   handler: async (request, context) => {
     const principalHeader = request.headers.get("x-ms-client-principal");
 
@@ -60,10 +26,22 @@ app.http("adminUsersInline", {
       };
     }
 
+    const wantsAdminUsers = request.query.get("adminUsers") === "true";
+
+    if (!wantsAdminUsers) {
+      return {
+        status: 200,
+        jsonBody: {
+          userId: principal.userId,
+          userDetails: principal.userDetails,
+          userRoles: principal.userRoles
+        }
+      };
+    }
+
     try {
       const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
 
-      // Get current user
       const userResult = await pool.request()
         .input("EntraUserId", sql.NVarChar(200), principal.userId)
         .query(`
@@ -84,7 +62,6 @@ app.http("adminUsersInline", {
 
       const currentUser = userResult.recordset[0];
 
-      // Check roles
       const rolesResult = await pool.request()
         .input("UserId", sql.Int, currentUser.UserId)
         .query(`
@@ -104,7 +81,6 @@ app.http("adminUsersInline", {
         };
       }
 
-      // Get all users
       const usersResult = await pool.request().query(`
         SELECT
           u.UserId,
@@ -161,7 +137,7 @@ app.http("adminUsersInline", {
         jsonBody: Array.from(usersMap.values())
       };
     } catch (err) {
-      context.log("ADMIN USERS ERROR", err);
+      context.log("ADMIN USERS VIA ME ERROR", err);
       return {
         status: 500,
         jsonBody: {
