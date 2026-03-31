@@ -9,5 +9,4 @@ require("./noteById/index");
 require("./files/index");
 require("./fileLinks/index");
 require("./filesLinked/index");
-require("./adminUsers/index");
-require("./adminUserUpdate/index");
+
