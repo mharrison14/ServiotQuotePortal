@@ -29,16 +29,60 @@ app.http("me", {
     const wantsAdminUsers = request.query.get("adminUsers") === "true";
     const wantsAdminUpdateUser = request.query.get("adminUpdateUser") === "true";
 
-    if (!wantsAdminUsers && !wantsAdminUpdateUser) {
-      return {
-        status: 200,
-        jsonBody: {
-          userId: principal.userId,
-          userDetails: principal.userDetails,
-          userRoles: principal.userRoles
-        }
-      };
+    // ALWAYS resolve user from database for normal requests
+try {
+  const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
+
+  const userResult = await pool.request()
+    .input("EntraUserId", sql.NVarChar(200), principal.userId)
+    .query(`
+      SELECT TOP 1
+        u.UserId,
+        u.Email,
+        u.DisplayName
+      FROM Users u
+      WHERE u.EntraUserId = @EntraUserId
+    `);
+
+  if (userResult.recordset.length === 0) {
+    return {
+      status: 404,
+      jsonBody: { error: "User not found in app database" }
+    };
+  }
+
+  const user = userResult.recordset[0];
+
+  const rolesResult = await pool.request()
+    .input("UserId", sql.Int, user.UserId)
+    .query(`
+      SELECT r.RoleName
+      FROM UserRoles ur
+      JOIN Roles r ON r.RoleId = ur.RoleId
+      WHERE ur.UserId = @UserId
+    `);
+
+  const roleNames = rolesResult.recordset.map(r => r.RoleName);
+
+  return {
+    status: 200,
+    jsonBody: {
+      userId: principal.userId,
+      userDetails: principal.userDetails,
+      userRoles: roleNames
     }
+  };
+
+} catch (err) {
+  context.log("ME ERROR", err);
+  return {
+    status: 500,
+    jsonBody: {
+      error: "Failed to load user",
+      detail: err.message
+    }
+  };
+}
 
     try {
       const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
