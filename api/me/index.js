@@ -29,9 +29,6 @@ app.http("me", {
     const wantsAdminUsers = request.query.get("adminUsers") === "true";
     const wantsAdminUpdateUser = request.query.get("adminUpdateUser") === "true";
 
-    // =====================
-    // Default /api/me
-    // =====================
     if (!wantsAdminUsers && !wantsAdminUpdateUser) {
       return {
         status: 200,
@@ -85,9 +82,6 @@ app.http("me", {
         };
       }
 
-      // =====================
-      // GET ADMIN USERS
-      // =====================
       if (wantsAdminUsers && request.method === "GET") {
         const usersResult = await pool.request().query(`
           SELECT
@@ -146,9 +140,6 @@ app.http("me", {
         };
       }
 
-      // =====================
-      // UPDATE USER ACCESS
-      // =====================
       if (wantsAdminUpdateUser && request.method === "PUT") {
         const body = await request.json();
 
@@ -163,12 +154,98 @@ app.http("me", {
           };
         }
 
-        // Clear roles
+        const targetUserResult = await pool.request()
+          .input("TargetUserId", sql.Int, targetUserId)
+          .query(`
+            SELECT TOP 1
+              UserId,
+              Email,
+              DisplayName,
+              IsActive,
+              CreatedUtc
+            FROM Users
+            WHERE UserId = @TargetUserId
+          `);
+
+        if (targetUserResult.recordset.length === 0) {
+          return {
+            status: 404,
+            jsonBody: { error: "Target user not found" }
+          };
+        }
+
+        const existingRolesResult = await pool.request()
+          .input("TargetUserId", sql.Int, targetUserId)
+          .query(`
+            SELECT r.RoleName
+            FROM UserRoles ur
+            JOIN Roles r ON r.RoleId = ur.RoleId
+            WHERE ur.UserId = @TargetUserId
+            ORDER BY r.RoleName
+          `);
+
+        const existingAccountsResult = await pool.request()
+          .input("TargetUserId", sql.Int, targetUserId)
+          .query(`
+            SELECT ca.CustomerAccountId, ca.AccountName
+            FROM CustomerAccountUsers cau
+            JOIN CustomerAccounts ca ON ca.CustomerAccountId = cau.CustomerAccountId
+            WHERE cau.UserId = @TargetUserId
+            ORDER BY ca.CustomerAccountId
+          `);
+
+        const beforeSnapshot = {
+          user: targetUserResult.recordset[0],
+          roles: existingRolesResult.recordset.map(r => r.RoleName),
+          customerAccounts: existingAccountsResult.recordset
+        };
+
+        const validRolesResult = await pool.request().query(`
+          SELECT RoleName
+          FROM Roles
+        `);
+
+        const validRoles = validRolesResult.recordset.map(r => r.RoleName);
+        const invalidRoles = roles.filter(r => !validRoles.includes(r));
+
+        if (invalidRoles.length > 0) {
+          return {
+            status: 400,
+            jsonBody: { error: `Invalid roles: ${invalidRoles.join(", ")}` }
+          };
+        }
+
+        if (customerAccountIds.some(id => !Number.isInteger(Number(id)))) {
+          return {
+            status: 400,
+            jsonBody: { error: "customerAccountIds must all be numeric" }
+          };
+        }
+
+        if (customerAccountIds.length > 0) {
+          const accountCheckResult = await pool.request().query(`
+            SELECT CustomerAccountId
+            FROM CustomerAccounts
+          `);
+
+          const validAccountIds = accountCheckResult.recordset.map(a => a.CustomerAccountId);
+          const invalidAccountIds = customerAccountIds.filter(id => !validAccountIds.includes(Number(id)));
+
+          if (invalidAccountIds.length > 0) {
+            return {
+              status: 400,
+              jsonBody: { error: `Invalid customerAccountIds: ${invalidAccountIds.join(", ")}` }
+            };
+          }
+        }
+
         await pool.request()
           .input("TargetUserId", sql.Int, targetUserId)
-          .query(`DELETE FROM UserRoles WHERE UserId = @TargetUserId`);
+          .query(`
+            DELETE FROM UserRoles
+            WHERE UserId = @TargetUserId
+          `);
 
-        // Insert roles
         for (const roleName of roles) {
           await pool.request()
             .input("TargetUserId", sql.Int, targetUserId)
@@ -181,12 +258,13 @@ app.http("me", {
             `);
         }
 
-        // Clear accounts
         await pool.request()
           .input("TargetUserId", sql.Int, targetUserId)
-          .query(`DELETE FROM CustomerAccountUsers WHERE UserId = @TargetUserId`);
+          .query(`
+            DELETE FROM CustomerAccountUsers
+            WHERE UserId = @TargetUserId
+          `);
 
-        // Insert accounts
         for (const customerAccountId of customerAccountIds) {
           await pool.request()
             .input("TargetUserId", sql.Int, targetUserId)
@@ -197,11 +275,61 @@ app.http("me", {
             `);
         }
 
+        const updatedRolesResult = await pool.request()
+          .input("TargetUserId", sql.Int, targetUserId)
+          .query(`
+            SELECT r.RoleName
+            FROM UserRoles ur
+            JOIN Roles r ON r.RoleId = ur.RoleId
+            WHERE ur.UserId = @TargetUserId
+            ORDER BY r.RoleName
+          `);
+
+        const updatedAccountsResult = await pool.request()
+          .input("TargetUserId", sql.Int, targetUserId)
+          .query(`
+            SELECT ca.CustomerAccountId, ca.AccountName
+            FROM CustomerAccountUsers cau
+            JOIN CustomerAccounts ca ON ca.CustomerAccountId = cau.CustomerAccountId
+            WHERE cau.UserId = @TargetUserId
+            ORDER BY ca.CustomerAccountId
+          `);
+
+        const afterSnapshot = {
+          user: targetUserResult.recordset[0],
+          roles: updatedRolesResult.recordset.map(r => r.RoleName),
+          customerAccounts: updatedAccountsResult.recordset
+        };
+
+        await pool.request()
+          .input("EntityType", sql.NVarChar(100), "UserAccess")
+          .input("EntityId", sql.Int, targetUserId)
+          .input("ActionType", sql.NVarChar(100), "Update")
+          .input("OldValueJson", sql.NVarChar(sql.MAX), JSON.stringify(beforeSnapshot))
+          .input("NewValueJson", sql.NVarChar(sql.MAX), JSON.stringify(afterSnapshot))
+          .input("PerformedByUserId", sql.Int, currentUser.UserId)
+          .query(`
+            INSERT INTO AuditEvents (
+              EntityType,
+              EntityId,
+              ActionType,
+              OldValueJson,
+              NewValueJson,
+              PerformedByUserId
+            )
+            VALUES (
+              @EntityType,
+              @EntityId,
+              @ActionType,
+              @OldValueJson,
+              @NewValueJson,
+              @PerformedByUserId
+            )
+          `);
+
         return {
           status: 200,
-          jsonBody: {
-            message: "User updated successfully"
-          }
+          jsonBody: afterSnapshot
         };
       }
 
@@ -209,13 +337,12 @@ app.http("me", {
         status: 405,
         jsonBody: { error: "Method not allowed" }
       };
-
     } catch (err) {
-      context.log("ME ADMIN ERROR", err);
+      context.log("ME ADMIN API ERROR", err);
       return {
         status: 500,
         jsonBody: {
-          error: "Admin operation failed",
+          error: "Admin action failed",
           detail: err.message
         }
       };
