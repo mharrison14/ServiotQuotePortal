@@ -1,5 +1,5 @@
 const { app } = require("@azure/functions");
-const sql = require("mssql");
+const { sql, getPool } = require("../shared/sql");
 
 app.http("me", {
   methods: ["GET", "PUT"],
@@ -31,7 +31,7 @@ app.http("me", {
 
     // ALWAYS resolve user from database for normal requests
 try {
-  const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
+  const pool = await getPool();
 
   const userResult = await pool.request()
     .input("EntraUserId", sql.NVarChar(200), principal.userId)
@@ -85,7 +85,7 @@ try {
 }
 
     try {
-      const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
+      const pool = await getPool();
 
       const currentUserResult = await pool.request()
         .input("EntraUserId", sql.NVarChar(200), principal.userId)
