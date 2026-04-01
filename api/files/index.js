@@ -49,8 +49,8 @@ app.http("fileUpload", {
     }
 
     try {
-      const sql = require("mssql");
-      const pool = await sql.connect(process.env.SQL_CONNECTION_STRING);
+      const { sql, getPool } = require("../shared/sql");
+      const pool = await getPool();
 
       const entraUserId = principal.userId;
 
